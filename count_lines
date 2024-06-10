@@ -1,0 +1,100 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+
+#define MAX_LINE_LENGTH 1024
+
+int count_lines(const char *filename) {
+    FILE *fp;
+    char line[MAX_LINE_LENGTH];
+    int count = 0;
+    int in_comment = 0;
+
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Error opening file: %s\n", filename);
+        return -1;
+    }
+
+    while (fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        int skip_line = 0;
+
+        while (*p != '\0') {
+            if (in_comment) {
+                if (strncmp(p, "*/", 2) == 0) {
+                    in_comment = 0;
+                    p += 2;
+                } else {
+                    p++;
+                }
+            } else if (strncmp(p, "/*", 2) == 0) {
+                in_comment = 1;
+                p += 2;
+                skip_line = 1;
+            } else if (strncmp(p, "//", 2) == 0) {
+                skip_line = 1;
+                break;
+            } else {
+                p++;
+            }
+        }
+
+        if (!skip_line && !in_comment) {
+            count++;
+        }
+    }
+
+    fclose(fp);
+    return count;
+}
+
+void traverse_directory(const char *path, int *total_lines, int *num_files) {
+    struct dirent *entry;
+    DIR *dp = opendir(path);
+
+    if (dp == NULL) {
+        fprintf(stderr, "Error opening directory: %s\n", path);
+        return;
+    }
+
+    while ((entry = readdir(dp))) {
+        char full_path[1024];
+        if (entry->d_type == DT_DIR) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+            traverse_directory(full_path, total_lines, num_files);
+        } else {
+            snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+            if (strstr(full_path, ".c") || strstr(full_path, ".h")) {
+                int lines = count_lines(full_path);
+                if (lines >= 0) {
+                    *total_lines += lines;
+                    (*num_files)++;
+                }
+            }
+        }
+    }
+
+    closedir(dp);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <path_to_C_project>\n", argv[0]);
+        return 1;
+    }
+
+    int total_lines = 0;
+    int num_files = 0;
+
+    traverse_directory(argv[1], &total_lines, &num_files);
+
+    printf("Total lines of code (excluding comments): %d\n", total_lines);
+    printf("Number of C/C++ files: %d\n", num_files);
+
+    return 0;
+}
